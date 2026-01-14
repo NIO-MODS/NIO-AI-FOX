@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NIO-GPT Fox</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark-dimmed.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Geist:wght@100..900&family=JetBrains+Mono:wght@400;500&display=swap');
+
+        :root {
+            --onyx-black: #050505;
+            --fox-orange: #f97316;
+            --sidebar-width: 320px;
+            --sandbox-height: 99px;
+        }
+
+        body {
+            font-family: 'Geist', sans-serif;
+            background-color: var(--onyx-black);
+            color: #f0f0f0;
+            overflow: hidden;
+            margin: 0;
+            width: 100vw;
+            position: fixed;
+        }
+
+        .app-container {
+            display: flex;
+            width: calc(100vw + var(--sidebar-width));
+            height: 100vh;
+            transform: translateX(calc(-1 * var(--sidebar-width)));
+            transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .app-container.sidebar-open {
+            transform: translateX(0);
+        }
+
+        #sidebar {
+            width: var(--sidebar-width);
+            height: 100vh;
+            background: #080808;
+            border-right: 1px solid rgba(255, 255, 255, 0.05);
+            flex-shrink: 0;
+            z-index: 101;
+        }
+
+        #main-workspace {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+            background: var(--onyx-black);
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        #workspace-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 100;
+            background: rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(0px);
+            pointer-events: none;
+            transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+            opacity: 0;
+        }
+
+        .sidebar-open #workspace-overlay {
+            backdrop-filter: blur(20px);
+            opacity: 1;
+            pointer-events: auto;
+            cursor: pointer;
+        }
+
+        #input-container {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            width: 100%;
+            max-width: 900px;
+            padding: 0 24px;
+            z-index: 110;
+            transition: top 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        #input-container.docked-final {
+            top: calc(100% - 100px);
+        }
+
+        .input-wrapper {
+            background: #0d0d0d;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 26px;
+            height: var(--sandbox-height);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transform-origin: top center;
+            display: flex;
+            align-items: center;
+        }
+
+        #promptInput {
+            background: transparent;
+            border: none;
+            outline: none !important;
+            box-shadow: none !important;
+            -webkit-appearance: none;
+        }
+
+        #sendBtn {
+            background: white;
+            color: black;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        #sendBtn:disabled {
+            background: #222 !important;
+            color: #555 !important;
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: scale(1) !important;
+        }
+
+        /* Attachment Menu Styles */
+        #attachMenu {
+            position: absolute;
+            bottom: 110%;
+            left: 0;
+            background: #111;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            width: 180px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            opacity: 0;
+            transform: translateY(10px) scale(0.95);
+            pointer-events: none;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: 200;
+        }
+
+        #attachMenu.open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+
+        .attach-option {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 14px;
+            transition: all 0.2s;
+            color: #888;
+            font-size: 13px;
+            font-weight: 500;
+            width: 100%;
+            text-align: left;
+        }
+
+        .attach-option:hover { background: rgba(255,255,255,0.05); color: #fff; }
+
+        /* Mode Menu Styles */
+        #modeMenu {
+            position: absolute;
+            bottom: 110%;
+            right: 0;
+            background: #111;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            width: 180px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            opacity: 0;
+            transform: translateY(10px) scale(0.95);
+            pointer-events: none;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            z-index: 200;
+        }
+
+        #modeMenu.open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+
+        .mode-btn {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 14px;
+            transition: all 0.2s;
+            color: #888;
+            font-size: 13px;
+            font-weight: 500;
+            width: 100%;
+            text-align: left;
+        }
+
+        .mode-btn:hover { background: rgba(255,255,255,0.05); color: #fff; }
+        .mode-btn.active { background: var(--fox-orange); color: #000; }
+
+        /* Updated Mode Selection Button */
+        .mode-selector-pill {
+            height: 15px;
+            min-width: 10px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #888;
+            font-size: 8px;
+            padding: 0 8px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            gap: 4px;
+            white-space: nowrap;
+        }
+
+        .mode-selector-pill:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+        .code-block-wrapper {
+            background: #0d0d0d;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 16px;
+            overflow: hidden;
+            margin: 1.5rem 0;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            max-width: 100%;
+        }
+
+        .code-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 16px;
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            font-size: 10px;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            font-weight: 800;
+        }
+
+        .action-btn {
+            background: rgba(255, 255, 255, 0.03);
+            color: #777;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .action-btn:hover { background: white; color: black; transform: translateY(-1px); }
+        .action-btn.success { background: #22c55e !important; color: white !important; border-color: #22c55e !important; }
+
+        pre { background: transparent !important; margin: 0 !important; padding: 0 !important; }
+        code.hljs { font-family: 'JetBrains Mono', monospace !important; font-size: 0.85rem !important; line-height: 1.7 !important; padding: 24px !important; background: transparent !important; display: block; overflow-x: auto; }
+
+        .prose { 
+            max-width: 100%; color: #d1d5db; font-size: 1rem; line-height: 1.8; 
+            word-wrap: break-word; overflow-wrap: break-word; word-break: break-word; 
+        }
+        .prose h1, .prose h2, .prose h3, .prose h4 { 
+            word-break: break-word; hyphens: auto; color: #fff;
+            margin-top: 1.5rem; margin-bottom: 0.5rem;
+        }
+        .prose strong { color: #fff; }
+
+        .thinking-shimmer {
+            width: 100%; max-width: 400px; height: 3px; background: rgba(255,255,255,0.05);
+            border-radius: 10px; position: relative; overflow: hidden; margin-top: 10px;
+        }
+
+        .thinking-shimmer::after {
+            content: ""; position: absolute; top: 0; left: -150%;
+            width: 150%; height: 100%;
+            background: linear-gradient(90deg, transparent, var(--fox-orange), #fff, var(--fox-orange), transparent);
+            animation: shimmer 1.5s infinite linear;
+        }
+
+        @keyframes shimmer { 0% { left: -150%; } 100% { left: 150%; } }
+
+        .anim-fade-up { animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes fadeUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+        .img-preview-bubble { width: 48px; height: 48px; border-radius: 12px; background-size: cover; background-position: center; position: relative; border: 1px solid rgba(255,255,255,0.1); }
+        .img-remove { position: absolute; top: -6px; right: -6px; background: #ef4444; color: white; width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 8px; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+    <div id="appContainer" class="app-container">
+        <aside id="sidebar" class="flex flex-col">
+            <div class="p-8 flex flex-col h-full">
+                <div class="flex items-center gap-4 mb-10">
+                    <div class="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center shadow-lg shadow-orange-500/20">
+                        <i class="fas fa-paw text-white text-xs"></i>
+                    </div>
+                    <span class="font-bold tracking-widest text-sm text-white uppercase">NIO-GPT FOX</span>
+                </div>
+
+                <button onclick="createNewChat()" class="w-full py-4 bg-white text-black font-bold rounded-2xl flex items-center justify-center gap-3 hover:scale-[1.02] transition-all active:scale-95 text-sm mb-6">
+                    <i class="fas fa-plus"></i> New Thread
+                </button>
+
+                <div id="historyList" class="flex-1 overflow-y-auto space-y-2 pr-2 scrollbar-hide"></div>
+
+                <div class="mt-auto pt-6 border-t border-white/5 flex flex-col gap-2">
+                    <div class="flex justify-between items-center">
+                        <span class="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Active Mode</span>
+                        <button onclick="clearAllData()" class="text-[9px] text-red-900 hover:text-red-500 transition-colors">RESET</button>
+                    </div>
+                    <span id="currentModeLabel" class="text-[12px] text-orange-400 font-medium">Standard</span>
+                </div>
+            </div>
+        </aside>
+
+        <section id="main-workspace">
+            <div id="workspace-overlay" onclick="toggleSidebar()"></div>
+
+            <header class="h-20 flex items-center px-8 justify-between z-50">
+                <button onclick="toggleSidebar()" class="w-10 h-10 flex items-center justify-center hover:bg-white/5 rounded-full text-zinc-400 transition-all">
+                    <i class="fas fa-bars-staggered"></i>
+                </button>
+                <div id="activeChatTitle" class="text-[10px] font-black tracking-[0.2em] text-zinc-500 uppercase">NIO-GPT Ready</div>
+                <div class="w-10"></div>
+            </header>
+
+            <div id="chatCanvas" class="flex-1 overflow-y-auto p-6 md:p-12 pb-40 space-y-10 flex flex-col items-center scrollbar-hide">
+                <div id="welcomeView" class="mt-12 text-center anim-fade-up max-w-xl">
+                    <div class="w-20 h-20 bg-orange-600/20 rounded-3xl flex items-center justify-center mx-auto mb-8">
+                        <i class="fas fa-paw text-orange-500 text-3xl"></i>
+                    </div>
+                    <h1 class="text-6xl font-black mb-6 tracking-tighter text-white">NIO-GPT.</h1>
+                    <p class="text-zinc-500 text-lg leading-relaxed">Built by nio. Powered by the Fox model.</p>
+                </div>
+                <div id="messageAnchor" class="w-full max-w-4xl space-y-10"></div>
+            </div>
+
+            <div id="input-container">
+                <div class="max-w-4xl mx-auto relative">
+                    
+                    <div id="imagePreviewStrip" class="hidden mb-2 flex gap-2 overflow-x-auto p-2 scrollbar-hide"></div>
+                    
+                    <div class="input-wrapper px-4 md:px-6 shadow-2xl relative">
+                        <div class="flex items-center gap-2 relative">
+                            <!-- Image Attachment Button -->
+                            <div id="attachBtn" onclick="toggleAttachMenu(event)" class="p-3 md:p-4 bg-white/5 text-zinc-400 rounded-xl hover:text-white cursor-pointer transition-all flex items-center justify-center">
+                                <i class="fas fa-image text-xs md:text-sm"></i>
+                            </div>
+
+                            <!-- Attachment Sub-Menu -->
+                            <div id="attachMenu">
+                                <button onclick="triggerInput('gallery')" class="attach-option">
+                                    <i class="fas fa-images w-4"></i> Gallery
+                                </button>
+                                <button onclick="triggerInput('file')" class="attach-option">
+                                    <i class="fas fa-file-alt w-4"></i> File
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Hidden Inputs -->
+                        <input type="file" id="galleryInput" class="hidden" accept="image/*" multiple onchange="handleFileSelect(this)">
+                        <input type="file" id="fileInput" class="hidden" onchange="handleFileSelect(this)">
+
+                        <textarea id="promptInput" rows="1" placeholder="Chat with the Fox..." 
+                            class="flex-1 bg-transparent border-none focus:ring-0 outline-none text-sm md:text-base py-3 px-3 resize-none max-h-[80px] text-zinc-200 scrollbar-hide self-center"></textarea>
+                        
+                        <div class="flex items-center gap-2 relative">
+                            <!-- Mode Menu -->
+                            <div id="modeMenu">
+                                <button onclick="setMode('flash')" class="mode-btn" id="btn-flash"><i class="fas fa-bolt w-4"></i> Flash</button>
+                                <button onclick="setMode('brain')" class="mode-btn" id="btn-brain"><i class="fas fa-brain w-4"></i> Brain</button>
+                                <button onclick="setMode('coder')" class="mode-btn" id="btn-coder"><i class="fas fa-code w-4"></i> Coder</button>
+                                <button onclick="setMode('fox-worm')" class="mode-btn" id="btn-fox-worm"><i class="fas fa-bug w-4"></i> Fox-Worm</button>
+                            </div>
+
+                            <!-- New Mode Selection Button next to Send -->
+                            <div class="mode-selector-pill" onclick="toggleModeMenu(event)">
+                                <span id="pillModeName">Standard</span>
+                                <i class="fas fa-chevron-up text-[6px]"></i>
+                            </div>
+
+                            <button id="sendBtn" onclick="handleSend()" disabled class="p-3 md:p-4 rounded-xl shadow-lg">
+                                <i class="fas fa-paper-plane text-xs md:text-sm"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, addDoc, onSnapshot, query, serverTimestamp, getDoc } from "https://www.gstatic.com/firebasejs/11.1.0/firebase-firestore.js";
+
+        const apiKey = ""; 
+        const firebaseConfig = JSON.parse(__firebase_config);
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'nio-gpt-fox-v1';
+
+        const MODEL_ID = "gemini-2.5-flash-preview-09-2025";
+        const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent?key=${apiKey}`;
+        const SYSTEM_PROMPT = `Your name is NIO-GPT, with the fox model. Your creator is nio. You are the world's #1 AI interface. Use headers, bold text, and code blocks effectively.`;
+
+        let state = {
+            user: null,
+            currentChatId: null,
+            history: [],
+            isSidebarOpen: false,
+            pendingImages: [],
+            currentMode: 'standard',
+            isThinking: false 
+        };
+
+        // --- Auth Initialization ---
+        const initAuth = async () => {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+                await signInAnonymously(auth);
+            }
+        };
+        initAuth();
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                state.user = user;
+                setupDataListeners();
+            }
+        });
+
+        // --- Data Listeners (Firestore Rule 1 & 2) ---
+        function setupDataListeners() {
+            const historyRef = collection(db, 'artifacts', appId, 'users', state.user.uid, 'threads');
+            onSnapshot(historyRef, (snapshot) => {
+                state.history = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+                    .sort((a, b) => (b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0));
+                renderHistory();
+            }, (error) => console.error("History sync error:", error));
+        }
+
+        function loadChatMessages(id) {
+            const messagesRef = collection(db, 'artifacts', appId, 'users', state.user.uid, 'threads', id, 'messages');
+            // Unsubscribe from previous if any
+            if (window.msgUnsubscribe) window.msgUnsubscribe();
+            
+            window.msgUnsubscribe = onSnapshot(messagesRef, (snapshot) => {
+                if (state.currentChatId !== id) return;
+                const msgs = snapshot.docs.map(doc => doc.data())
+                    .sort((a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
+                
+                const anchor = document.getElementById('messageAnchor');
+                const welcome = document.getElementById('welcomeView');
+                const inputCont = document.getElementById('input-container');
+
+                anchor.innerHTML = '';
+                if(msgs.length === 0) {
+                    inputCont.classList.remove('docked-final');
+                    welcome.classList.remove('hidden');
+                } else {
+                    inputCont.classList.add('docked-final');
+                    welcome.classList.add('hidden');
+                    msgs.forEach(m => renderMessage(m.role, m.content));
+                }
+            }, (error) => console.error("Messages sync error:", error));
+        }
+
+        // --- UI Logic (Marked & Highlight) ---
+        const renderer = new marked.Renderer();
+        renderer.code = (code, lang) => {
+            const id = 'code_' + Math.random().toString(36).substr(2, 9);
+            const escapedCode = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            return `
+                <div class="code-block-wrapper">
+                    <header class="code-header">
+                        <span>${lang || 'code'}</span>
+                        <div class="code-actions">
+                            <button class="action-btn" onclick="copyCodeText(this, '${id}')"><i class="fas fa-copy"></i></button>
+                        </div>
+                    </header>
+                    <pre><code id="${id}" class="hljs language-${lang}">${escapedCode}</code></pre>
+                </div>`;
+        };
+        marked.setOptions({ renderer });
+
+        window.copyCodeText = (btn, id) => {
+            const code = document.getElementById(id).innerText;
+            const textArea = document.createElement("textarea");
+            textArea.value = code; document.body.appendChild(textArea);
+            textArea.select(); document.execCommand('copy');
+            document.body.removeChild(textArea);
+            const icon = btn.querySelector('i');
+            btn.classList.add('success'); icon.className = 'fas fa-check';
+            setTimeout(() => { btn.classList.remove('success'); icon.className = 'fas fa-copy'; }, 2000);
+        };
+
+        window.toggleAttachMenu = (e) => {
+            if(state.isThinking) return;
+            e.stopPropagation();
+            document.getElementById('modeMenu').classList.remove('open');
+            document.getElementById('attachMenu').classList.toggle('open');
+        };
+
+        window.triggerInput = (type) => {
+            if(state.isThinking) return;
+            const idMap = { gallery: 'galleryInput', file: 'fileInput' };
+            document.getElementById(idMap[type]).click();
+        };
+
+        window.toggleModeMenu = (e) => { 
+            if(state.isThinking) return;
+            e.stopPropagation(); 
+            document.getElementById('attachMenu').classList.remove('open');
+            document.getElementById('modeMenu').classList.toggle('open'); 
+        };
+
+        window.setMode = (mode) => {
+            state.currentMode = mode;
+            const label = mode.charAt(0).toUpperCase() + mode.slice(1);
+            document.getElementById('currentModeLabel').innerText = label;
+            document.getElementById('pillModeName').innerText = label;
+            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+            const btn = document.getElementById(`btn-${mode}`);
+            if(btn) btn.classList.add('active');
+        };
+
+        window.toggleSidebar = () => {
+            state.isSidebarOpen = !state.isSidebarOpen;
+            document.getElementById('appContainer').classList.toggle('sidebar-open', state.isSidebarOpen);
+        };
+
+        window.createNewChat = () => {
+            if(state.isThinking) return; 
+            state.currentChatId = null;
+            document.getElementById('messageAnchor').innerHTML = '';
+            document.getElementById('activeChatTitle').innerText = 'NIO-GPT Ready';
+            document.getElementById('input-container').classList.remove('docked-final');
+            document.getElementById('welcomeView').classList.remove('hidden');
+            if(state.isSidebarOpen) toggleSidebar();
+        };
+
+        window.loadChat = (id) => {
+            if(state.isThinking) return; 
+            state.currentChatId = id;
+            const chat = state.history.find(c => c.id === id);
+            if(!chat) return;
+            document.getElementById('activeChatTitle').innerText = chat.title;
+            loadChatMessages(id);
+            if(state.isSidebarOpen) toggleSidebar();
+        };
+
+        function renderHistory() {
+            const list = document.getElementById('historyList');
+            list.innerHTML = state.history.map(chat => `
+                <div onclick="loadChat('${chat.id}')" class="group p-4 rounded-2xl cursor-pointer transition-all ${state.currentChatId === chat.id ? 'bg-white/5' : 'hover:bg-white/[0.02]'}">
+                    <span class="text-xs truncate block font-bold ${state.currentChatId === chat.id ? 'text-white' : 'text-zinc-600'}">${chat.title}</span>
+                </div>`).join('');
+        }
+
+        function renderMessage(role, content) {
+            const anchor = document.getElementById('messageAnchor');
+            const wrap = document.createElement('div');
+            wrap.className = `w-full flex ${role === 'user' ? 'justify-end' : 'justify-start'} anim-fade-up`;
+            const inner = document.createElement('div');
+            inner.className = `max-w-[100%] md:max-w-3xl p-4 md:p-6 rounded-3xl ${role === 'user' ? 'bg-[#111] border border-white/5' : 'bg-transparent'}`;
+            const div = document.createElement('div');
+            div.className = "prose prose-invert";
+            div.innerHTML = marked.parse(content);
+            inner.appendChild(div); wrap.appendChild(inner); anchor.appendChild(wrap);
+            div.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
+            
+            const canvas = document.getElementById('chatCanvas');
+            canvas.scrollTo({ top: canvas.scrollHeight, behavior: 'smooth' });
+        }
+
+        window.handleFileSelect = (input) => {
+            if(state.isThinking) return;
+            Array.from(input.files).forEach(f => {
+                const r = new FileReader();
+                r.onload = (e) => { 
+                    state.pendingImages.push(e.target.result); 
+                    renderImagePreviews(); 
+                    updateButtonState(); 
+                };
+                r.readAsDataURL(f);
+            });
+            input.value = '';
+        };
+
+        function renderImagePreviews() {
+            const s = document.getElementById('imagePreviewStrip');
+            if (state.pendingImages.length > 0) {
+                s.classList.remove('hidden');
+                s.innerHTML = state.pendingImages.map((src, i) => `
+                    <div class="img-preview-bubble" style="background-image: url('${src}')">
+                        <div class="img-remove" onclick="removeImage(${i})"><i class="fas fa-times"></i></div>
+                    </div>`).join('');
+            } else s.classList.add('hidden');
+        }
+
+        window.removeImage = (i) => { 
+            if(state.isThinking) return;
+            state.pendingImages.splice(i, 1); 
+            renderImagePreviews(); 
+            updateButtonState();
+        };
+
+        function updateButtonState() {
+            const btn = document.getElementById('sendBtn');
+            const input = document.getElementById('promptInput');
+            const hasText = input.value.trim().length > 0;
+            const hasImages = state.pendingImages.length > 0;
+
+            if (state.isThinking) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs md:text-sm"></i>';
+            } else {
+                btn.disabled = !(hasText || hasImages);
+                btn.innerHTML = '<i class="fas fa-paper-plane text-xs md:text-sm"></i>';
+            }
+        }
+
+        window.handleSend = async () => {
+            if(state.isThinking || !state.user) return; 
+
+            const input = document.getElementById('promptInput');
+            const text = input.value.trim();
+            if(!text && state.pendingImages.length === 0) return;
+            
+            state.isThinking = true;
+            updateButtonState();
+
+            let threadId = state.currentChatId;
+            const currentImages = [...state.pendingImages];
+            state.pendingImages = [];
+            renderImagePreviews();
+            input.value = '';
+
+            try {
+                // Create Thread if it doesn't exist
+                if (!threadId) {
+                    const threadRef = await addDoc(collection(db, 'artifacts', appId, 'users', state.user.uid, 'threads'), {
+                        title: text.slice(0, 30) || "Fox Thread",
+                        updatedAt: serverTimestamp(),
+                        createdAt: serverTimestamp()
+                    });
+                    threadId = threadRef.id;
+                    state.currentChatId = threadId;
+                    loadChatMessages(threadId);
+                }
+
+                // Add User Message
+                await addDoc(collection(db, 'artifacts', appId, 'users', state.user.uid, 'threads', threadId, 'messages'), {
+                    role: 'user',
+                    content: text,
+                    timestamp: serverTimestamp()
+                });
+
+                const loaderId = showNeatLoader();
+                const response = await aiCall(text, currentImages);
+                hideLoader(loaderId);
+
+                // Add AI Message
+                await addDoc(collection(db, 'artifacts', appId, 'users', state.user.uid, 'threads', threadId, 'messages'), {
+                    role: 'assistant',
+                    content: response,
+                    timestamp: serverTimestamp()
+                });
+
+                // Update Thread Timestamp
+                await setDoc(doc(db, 'artifacts', appId, 'users', state.user.uid, 'threads', threadId), { 
+                    updatedAt: serverTimestamp() 
+                }, { merge: true });
+
+            } catch (e) {
+                renderMessage('assistant', `⚠️ Error: ${e.message}`);
+            } finally {
+                state.isThinking = false;
+                updateButtonState();
+            }
+        };
+
+        async function aiCall(text, images) {
+            const parts = [{ text: text }];
+            images.forEach(img => {
+                parts.push({ inlineData: { mimeType: "image/png", data: img.split(',')[1] } });
+            });
+
+            const res = await fetch(ENDPOINT, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: parts }],
+                    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] }
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error?.message || "Request failed");
+            return data.candidates[0].content.parts[0].text;
+        }
+
+        function showNeatLoader() {
+            const id = 'loader_' + Date.now();
+            const anchor = document.getElementById('messageAnchor');
+            const d = document.createElement('div');
+            d.id = id; d.className = "w-full flex justify-start anim-fade-up";
+            d.innerHTML = `<div class="flex flex-col gap-3 w-full max-w-sm"><span class="text-[9px] font-black text-orange-500 uppercase tracking-[0.3em]">Fox processing</span><div class="thinking-shimmer"></div></div>`;
+            anchor.appendChild(d); 
+            const canvas = document.getElementById('chatCanvas');
+            canvas.scrollTo({ top: canvas.scrollHeight, behavior: 'smooth' });
+            return id;
+        }
+
+        function hideLoader(id) { document.getElementById(id)?.remove(); }
+        window.clearAllData = () => { if(confirm("Reset all threads?")) location.reload(); };
+
+        const inputEl = document.getElementById('promptInput');
+        inputEl.addEventListener('input', updateButtonState);
+        inputEl.addEventListener('keydown', e => {
+            if(e.key === 'Enter' && !e.shiftKey) { 
+                e.preventDefault(); 
+                handleSend(); 
+            }
+        });
+
+        document.addEventListener('click', () => {
+            document.getElementById('modeMenu').classList.remove('open');
+            document.getElementById('attachMenu').classList.remove('open');
+        });
+    </script>
+</body>
+</html>
+
